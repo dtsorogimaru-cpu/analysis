@@ -1,0 +1,6 @@
+.env
+*.log
+__pycache__/
+*.pyc
+.mypy_cache/
+.world264_state_*.json
