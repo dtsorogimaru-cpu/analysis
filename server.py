@@ -1,7 +1,8 @@
+# server.py
 import os, threading, traceback, sys
 from fastapi import FastAPI
 import uvicorn
-import bot  # ต้องอยู่โฟลเดอร์เดียวกัน และมี main()
+import bot
 
 app = FastAPI()
 
@@ -12,7 +13,12 @@ def root():
 def run_bot():
     print("[SERVER] starting bot thread...", flush=True)
     try:
-        bot.main()
+        # ✅ สำคัญ: สร้าง event loop ให้เธรดนี้
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        bot.main()  # ใน bot.py จะเรียก app.run_polling(stop_signals=None)
     except Exception:
         print("[SERVER] bot crashed:\n" + traceback.format_exc(), file=sys.stderr, flush=True)
 
