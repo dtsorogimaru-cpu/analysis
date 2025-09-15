@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+*.log
+.mypy_cache/
+
+# App state
+.world264_state_*.json
+
+# OS/IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Render
+.renderignore
