@@ -5,27 +5,17 @@ import asyncio
 import httpx
 import logging
 from itertools import combinations
-from collections import Counter  # (ยังไม่ใช้ แต่เผื่ออนาคต)
 from datetime import date, datetime, timedelta
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
 from telegram.error import RetryAfter, TimedOut
-from telegram.constants import ParseMode  # ไม่จำเป็นมาก แต่เผื่อใช้อ้างอิง enum
+from telegram.constants import ParseMode
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        return
-    text = update.message.text
-    result = analyze_numbers(text, lock_size)
-    if result:
-        logging.info(f"[MANUAL_REPLY] Chat {update.message.chat.id}")
-        await update.message.reply_text(result, parse_mode="HTML")
-        
 # ──────────────────────────────────────────────────────────────────────
 # Timezone
 try:
@@ -187,7 +177,6 @@ def analyze_3_digit_combos(original_numbers_3d: list[str], lock_size=4):
     if total_locks == 0:
         return None
 
-    from itertools import combinations
     all_digits = "0123456789"
     candidate_combos = [frozenset(c) for c in combinations(all_digits, 3)]
 
@@ -279,7 +268,16 @@ def analyze_numbers(text: str, lock_size: int = 4) -> str | None:
     return separator.join(parts)
 
 # ──────────────────────────────────────────────────────────────────────
-# Bot Handlers
+# Handlers
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text
+    result = analyze_numbers(text, lock_size)
+    if result:
+        logging.info(f"[MANUAL_REPLY] Chat {update.message.chat.id}")
+        await update.message.reply_text(result, parse_mode=ParseMode.HTML)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 <b>บอทวิเคราะห์เลขพร้อมใช้งานแล้ว!</b>\n\n"
@@ -288,7 +286,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2️⃣ ส่งเข้ากลุ่มหลัก: ใช้ <code>/analyze <ผลเลข></code>\n"
         "3️⃣ ใช้กับข้อความเก่า: ตอบกลับแล้วพิมพ์ <code>/analyze</code>\n\n"
         f"<b>คำสั่งอื่นๆ:</b>\n/setlocks N (ปัจจุบัน: {lock_size})\n/status",
-        parse_mode="HTML"
+        parse_mode=ParseMode.HTML
     )
 
 async def setlocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -314,24 +312,24 @@ async def analyze_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "⚠️ <b>วิธีใช้:</b>\n"
             "1. <code>/analyze 427 - 25</code>\n"
             "2. ตอบกลับข้อความที่มีผลเลขด้วย <code>/analyze</code>",
-            parse_mode="HTML"
+            parse_mode=ParseMode.HTML
         )
         return
 
     result = analyze_numbers(text_to_analyze, lock_size)
     if result is None:
-        await update.message.reply_text("⚠️ ไม่พบรูปแบบ <code>123 - 45</code>", parse_mode="HTML")
+        await update.message.reply_text("⚠️ ไม่พบรูปแบบ <code>123 - 45</code>", parse_mode=ParseMode.HTML)
         return
 
     if not CHAT_IDS:
-        await update.message.reply_text(result, parse_mode="HTML")
-        await update.message.reply_text("ℹ️ ไม่ได้ตั้งค่า TELEGRAM_CHAT_IDS", parse_mode="HTML")
+        await update.message.reply_text(result, parse_mode=ParseMode.HTML)
+        await update.message.reply_text("ℹ️ ไม่ได้ตั้งค่า TELEGRAM_CHAT_IDS", parse_mode=ParseMode.HTML)
         return
 
     sent = 0
     for cid in CHAT_IDS:
         try:
-            await context.bot.send_message(chat_id=cid, text=result, parse_mode="HTML")
+            await context.bot.send_message(chat_id=cid, text=result, parse_mode=ParseMode.HTML)
             sent += 1
             await asyncio.sleep(0.25)
         except RetryAfter as e:
@@ -349,7 +347,7 @@ async def get_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f" • Title: <code>{chat.title or 'N/A'}</code>\n"
         f" • ID: <code>{chat.id}</code>\n"
         f" • Type: <code>{chat.type}</code>",
-        parse_mode="HTML"
+        parse_mode=ParseMode.HTML
     )
 
 async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -361,7 +359,7 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"• ขนาดล็อค: <b>{lock_size}</b>\n"
         f"• รอบล่าสุดที่บันทึก: <b>{last_cnt}</b>\n"
         f"• ล็อคล่าสุดสมบูรณ์: <b>{last_cnt // lock_size}</b> ล็อค",
-        parse_mode="HTML"
+        parse_mode=ParseMode.HTML
     )
 
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -419,7 +417,7 @@ async def poll_and_analyze(context: ContextTypes.DEFAULT_TYPE):
             logging.info(f"[POLL] Broadcasting analysis to {len(CHAT_IDS)} chats...")
             for cid in CHAT_IDS:
                 try:
-                    await context.bot.send_message(chat_id=cid, text=result, parse_mode="HTML")
+                    await context.bot.send_message(chat_id=cid, text=result, parse_mode=ParseMode.HTML)
                     logging.info(f"[POLL] ✅ sent to {cid}")
                     await asyncio.sleep(0.25)
                 except RetryAfter as e:
