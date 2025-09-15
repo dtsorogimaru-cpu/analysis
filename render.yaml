@@ -14,5 +14,5 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_IDS
         sync: false
-      - key: TZ           # ไม่บังคับ แต่ช่วยเรื่องเวลาให้ตรง
+      - key: TZ
         value: Asia/Bangkok
