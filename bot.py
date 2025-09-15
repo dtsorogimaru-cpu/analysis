@@ -9,6 +9,10 @@ from datetime import date, datetime, timedelta
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
 from telegram.error import RetryAfter, TimedOut
+import logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",)
 
 try:
     from zoneinfo import ZoneInfo
@@ -32,6 +36,13 @@ if not TOKEN:
 # ค่าเริ่มต้น: ขนาดล็อค (ปรับได้ด้วย /setlocks)
 lock_size = 4
 
+def main():
+    logging.info("Booting Telegram bot…")
+    app = Application.builder().token(TOKEN).build()
+    # … โค้ดเดิม …
+    logging.info("🤖 Bot is running…")
+    app.run_polling()
+    
 # ======================================================================
 # Utils: State per-day (กันส่งซ้ำหลังรีสตาร์ท) + Path helpers
 # ======================================================================
