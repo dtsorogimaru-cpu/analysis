@@ -1,8 +1,7 @@
-# server.py
 import os, threading, traceback, sys
 from fastapi import FastAPI
 import uvicorn
-import bot  # ไฟล์หลักของคุณ
+import bot  # ต้องอยู่โฟลเดอร์เดียวกัน และมี main()
 
 app = FastAPI()
 
