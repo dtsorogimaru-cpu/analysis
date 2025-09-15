@@ -1,26 +1,30 @@
 # server.py
-import os, threading, traceback, sys
-from fastapi import FastAPI
+import os, threading, traceback, sys, asyncio
+from fastapi import FastAPI, Response
 import uvicorn
 import bot
 
 app = FastAPI()
 
-@app.get("/")
+# ✅ ยอมรับทั้ง GET และ HEAD
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"ok": True, "service": "world264-analysis-bot"}
 
 def run_bot():
     print("[SERVER] starting bot thread...", flush=True)
     try:
-        # ✅ สำคัญ: สร้าง event loop ให้เธรดนี้
-        import asyncio
+        # event loop สำหรับเธรดรอง
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-        bot.main()  # ใน bot.py จะเรียก app.run_polling(stop_signals=None)
+        bot.main()
     except Exception:
         print("[SERVER] bot crashed:\n" + traceback.format_exc(), file=sys.stderr, flush=True)
+
+# (ออปชัน) ตัด 404 /favicon.ico ที่ชอบโผล่ในลอค
+@app.get("/favicon.ico")
+def favicon():
+    return Response(status_code=204)
 
 if __name__ == "__main__":
     threading.Thread(target=run_bot, daemon=True).start()
