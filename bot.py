@@ -10,12 +10,22 @@ from datetime import date, datetime, timedelta
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
 from telegram.error import RetryAfter, TimedOut
+from telegram.constants import ParseMode  # ไม่จำเป็นมาก แต่เผื่อใช้อ้างอิง enum
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        return
+    text = update.message.text
+    result = analyze_numbers(text, lock_size)
+    if result:
+        logging.info(f"[MANUAL_REPLY] Chat {update.message.chat.id}")
+        await update.message.reply_text(result, parse_mode="HTML")
+        
 # ──────────────────────────────────────────────────────────────────────
 # Timezone
 try:
