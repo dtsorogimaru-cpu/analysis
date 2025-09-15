@@ -1,11 +1,12 @@
 services:
   - type: web
     name: world264-analysis-bot
+    plan: free
     env: python
-    plan: free          # ระบุว่าใช้ Free Plan
     region: singapore
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: python server.py
+    autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.4
@@ -13,6 +14,5 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_IDS
         sync: false
-
-
-
+      - key: TZ           # ไม่บังคับ แต่ช่วยเรื่องเวลาให้ตรง
+        value: Asia/Bangkok
