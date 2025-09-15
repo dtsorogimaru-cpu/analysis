@@ -1,5 +1,5 @@
 services:
-  - type: worker
+  - type: web
     name: world264-analysis-bot
     env: python
     region: singapore           # เลือก region ใกล้ไทย (เปลี่ยนได้ตามสะดวก)
@@ -13,3 +13,4 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_IDS
         sync: false
+
