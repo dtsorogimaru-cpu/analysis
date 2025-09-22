@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
-from telegram.error import RetryAfter, TimedOut
+from telegram.error import RetryAfter, TimedOut, Conflict as TgConflict
 from telegram.constants import ParseMode
 
 # ──────────────────────────────────────────────────────────────────────
@@ -19,10 +19,9 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-# ลด verbosive ของ httpx ไม่ให้ URL/token โผล่มากเกินไป
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Heartbeat ให้ server.py /healthz อ่านได้
+# Heartbeat ให้ server.py /healthz ใช้ตรวจชีพจร
 LAST_HEARTBEAT: float = 0.0
 LAST_BROADCAST: float = 0.0
 
@@ -45,10 +44,10 @@ CHAT_IDS = [c.strip() for c in os.getenv("TELEGRAM_CHAT_IDS", "").split(",") if 
 if not TOKEN:
     raise ValueError("❌ TELEGRAM_BOT_TOKEN not found in env")
 
-# ค่าเริ่มต้น: ขนาดล็อค (ปรับได้ด้วย /setlocks)
+# ค่าเริ่มต้น: ขนาดล็อค (ปรับได้ด้วย /setlocks หรือ ENV LOCK_SIZE)
 lock_size = int(os.getenv("LOCK_SIZE", "4"))
 
-# ที่เก็บ state (บน Render ใช้ /tmp จะปลอดภัยกว่า dir โค้ด)
+# ที่เก็บ state (บน Render แนะนำ /tmp)
 STATE_DIR = os.environ.get("STATE_DIR", "/tmp")
 os.makedirs(STATE_DIR, exist_ok=True)
 
@@ -291,6 +290,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.info(f"[MANUAL_REPLY] Chat {update.message.chat.id}")
         await update.message.reply_text(result, parse_mode=ParseMode.HTML)
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    err = context.error
+    if isinstance(err, TgConflict):
+        logging.warning("[ERROR] Conflict: another getUpdates is running; backing off 60s")
+        await asyncio.sleep(60)
+        return
+    logging.exception("[ERROR] Unhandled exception", exc_info=err)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 <b>บอทวิเคราะห์เลขพร้อมใช้งานแล้ว!</b>\n\n"
@@ -460,7 +467,7 @@ async def poll_and_analyze(context: ContextTypes.DEFAULT_TYPE):
 def main():
     logging.info("Booting Telegram bot…")
 
-    # ลบ webhook อัตโนมัติก่อนเริ่ม polling กันชนกับ instance อื่น/โหมด webhook
+    # ลบ webhook อัตโนมัติ กันชน/กัน pending updates
     async def _post_init(app: Application):
         try:
             await app.bot.delete_webhook(drop_pending_updates=True)
@@ -472,7 +479,7 @@ def main():
         Application
         .builder()
         .token(TOKEN)
-        .post_init(_post_init)  # สำคัญ
+        .post_init(_post_init)   # สำคัญ
         .build()
     )
 
@@ -496,9 +503,16 @@ def main():
     # Text handler
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message, block=False))
 
+    # 👇 ลงทะเบียน error handler (แก้ปัญหา No error handlers are registered)
+    app.add_error_handler(on_error)
+
     logging.info("🤖 Bot is starting run_polling (thread mode)…")
-    # สำคัญ: รันในเธรด (จาก server.py) ต้องปิด signal handler
-    app.run_polling(stop_signals=None)
+    # รันในเธรด (จาก server.py) ปิด signal handler และทิ้งคิวเก่าทั้งหมด
+    app.run_polling(
+        stop_signals=None,
+        drop_pending_updates=True,
+        allowed_updates=Update.ALL_TYPES,
+    )
 
 if __name__ == "__main__":
     main()
