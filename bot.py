@@ -1,20 +1,30 @@
 import os
 import re
 import json
+import time
 import asyncio
 import httpx
 import logging
 from itertools import combinations
 from datetime import date, datetime, timedelta
+
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram import Update
 from telegram.error import RetryAfter, TimedOut
 from telegram.constants import ParseMode
 
+# ──────────────────────────────────────────────────────────────────────
+# Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+# ลด verbosive ของ httpx ไม่ให้ URL/token โผล่มากเกินไป
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
+# Heartbeat ให้ server.py /healthz อ่านได้
+LAST_HEARTBEAT: float = 0.0
+LAST_BROADCAST: float = 0.0
 
 # ──────────────────────────────────────────────────────────────────────
 # Timezone
@@ -32,17 +42,20 @@ load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_IDS = [c.strip() for c in os.getenv("TELEGRAM_CHAT_IDS", "").split(",") if c.strip()]
-
 if not TOKEN:
     raise ValueError("❌ TELEGRAM_BOT_TOKEN not found in env")
 
 # ค่าเริ่มต้น: ขนาดล็อค (ปรับได้ด้วย /setlocks)
-lock_size = 4
+lock_size = int(os.getenv("LOCK_SIZE", "4"))
+
+# ที่เก็บ state (บน Render ใช้ /tmp จะปลอดภัยกว่า dir โค้ด)
+STATE_DIR = os.environ.get("STATE_DIR", "/tmp")
+os.makedirs(STATE_DIR, exist_ok=True)
 
 # ──────────────────────────────────────────────────────────────────────
 # State per-day (กันส่งซ้ำหลังรีสตาร์ท)
 def state_file_for(d: date) -> str:
-    return os.path.join(os.path.dirname(__file__), f".world264_state_{d.isoformat()}.json")
+    return os.path.join(STATE_DIR, f".world264_state_{d.isoformat()}.json")
 
 def load_state(d: date) -> dict:
     path = state_file_for(d)
@@ -330,6 +343,8 @@ async def analyze_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for cid in CHAT_IDS:
         try:
             await context.bot.send_message(chat_id=cid, text=result, parse_mode=ParseMode.HTML)
+            global LAST_BROADCAST
+            LAST_BROADCAST = time.time()
             sent += 1
             await asyncio.sleep(0.25)
         except RetryAfter as e:
@@ -368,6 +383,8 @@ async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for cid in CHAT_IDS:
             try:
                 await context.bot.send_message(chat_id=cid, text="🔔 ping test from bot")
+                global LAST_BROADCAST
+                LAST_BROADCAST = time.time()
                 await asyncio.sleep(0.2)
             except Exception as e:
                 logging.error(f"[PING_BROADCAST_ERR] {e}")
@@ -382,6 +399,9 @@ async def update_logger(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ──────────────────────────────────────────────────────────────────────
 # Poller (ทุก 60 วิ) — ยิงเมื่อมี “ล็อคเต็มใหม่” เท่านั้น
 async def poll_and_analyze(context: ContextTypes.DEFAULT_TYPE):
+    global LAST_HEARTBEAT, LAST_BROADCAST
+    LAST_HEARTBEAT = time.time()  # heartbeat ทุกครั้งที่ job ตื่น
+
     today = datetime.now(BKK).date()
     state = load_state(today)
     last_processed_round_count = int(state.get("last_processed_round_count", 0))
@@ -407,7 +427,6 @@ async def poll_and_analyze(context: ContextTypes.DEFAULT_TYPE):
         logging.info("[POLL] Not enough rounds to complete a full lock yet.")
         return
 
-    # ยิงเมื่อมี 'ล็อคเต็มใหม่' เพิ่มขึ้น
     if usable > last_processed_round_count:
         logging.info(f"[POLL] New full lock up to {usable}. Analyzing...")
         text_to_analyze = "\n".join([f"{r['top3']} - {r['bottom2']}" for r in all_results[:usable]])
@@ -418,6 +437,7 @@ async def poll_and_analyze(context: ContextTypes.DEFAULT_TYPE):
             for cid in CHAT_IDS:
                 try:
                     await context.bot.send_message(chat_id=cid, text=result, parse_mode=ParseMode.HTML)
+                    LAST_BROADCAST = time.time()
                     logging.info(f"[POLL] ✅ sent to {cid}")
                     await asyncio.sleep(0.25)
                 except RetryAfter as e:
@@ -439,7 +459,22 @@ async def poll_and_analyze(context: ContextTypes.DEFAULT_TYPE):
 # Entry
 def main():
     logging.info("Booting Telegram bot…")
-    app = Application.builder().token(TOKEN).build()
+
+    # ลบ webhook อัตโนมัติก่อนเริ่ม polling กันชนกับ instance อื่น/โหมด webhook
+    async def _post_init(app: Application):
+        try:
+            await app.bot.delete_webhook(drop_pending_updates=True)
+            logging.info("[INIT] webhook removed (drop pending updates)")
+        except Exception as e:
+            logging.warning(f"[INIT] delete_webhook failed: {e}")
+
+    app = (
+        Application
+        .builder()
+        .token(TOKEN)
+        .post_init(_post_init)  # สำคัญ
+        .build()
+    )
 
     # Debug logger
     app.add_handler(MessageHandler(filters.ALL, update_logger), group=-1)
